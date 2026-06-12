@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>CertiCerts — Training Verification</title>
+<style>
+  :root{--brand:#16294B;--gold:#B8923A;--ok:#1D8A4E;--okbg:#EAF6EF;--okbr:#BFE0CC;--bad:#C2412A;--badbg:#FDF1EF;--badbr:#F2C4BC;--text:#1F2A37;--text2:#5B6B7F;--muted:#8794A6;--line:#E4E9F0}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#F2F4F8;color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:18px 14px 40px}
+  .brand{display:flex;align-items:center;gap:10px;margin:10px 0 18px}
+  .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#e8c876,#8a6b1e);display:flex;align-items:center;justify-content:center;color:#1a1206;font-weight:800;font-size:19px}
+  .brand b{font-size:19px;color:var(--brand);letter-spacing:.3px}
+  .brand span{font-size:12px;color:var(--muted)}
+  .card{width:100%;max-width:480px;background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 10px 34px rgba(25,45,75,.12)}
+  .banner{display:flex;align-items:center;gap:13px;padding:18px}
+  .banner .ic{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+  .banner h1{font-size:21px;letter-spacing:.5px}
+  .banner .sub{font-size:12px;margin-top:2px}
+  .ok .banner{background:var(--okbg);border-bottom:1px solid var(--okbr)}
+  .ok .ic{background:#fff;color:var(--ok)} .ok h1{color:var(--ok)} .ok .sub{color:#3d7c58}
+  .bad .banner{background:var(--badbg);border-bottom:1px solid var(--badbr)}
+  .bad .ic{background:#fff;color:var(--bad)} .bad h1{color:var(--bad)} .bad .sub{color:#a06457}
+  .who{padding:18px 18px 6px;text-align:center}
+  .who .name{font-size:25px;font-weight:700;color:var(--brand);line-height:1.1}
+  .who .co{font-size:13px;color:var(--text2);margin-top:4px;text-transform:uppercase;letter-spacing:1.5px}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  td{padding:9px 18px;font-size:14px;border-top:1px solid var(--line)}
+  td.l{color:var(--text2);font-size:11.5px;text-transform:uppercase;letter-spacing:1px;width:128px}
+  td.v{font-weight:600} .mono{font-family:Consolas,monospace;font-size:13px}
+  .chip{display:inline-block;padding:2px 10px;border-radius:14px;font-size:11.5px;font-weight:700}
+  .chip.ok{background:var(--okbg);color:var(--ok)} .chip.bad{background:var(--badbg);color:var(--bad)}
+  .multi{padding:4px 0 8px}
+  .crow{padding:10px 18px;border-top:1px solid var(--line)}
+  .crow .k{font-weight:600;font-size:14px}
+  .crow .m{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .crow .chip{float:right;margin-top:3px}
+  .auth{margin:14px 18px;border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:#F7F9FC}
+  .auth b{font-size:12.5px;color:var(--brand)}
+  .auth p{font-size:11.5px;color:var(--text2);line-height:1.55;margin-top:4px}
+  .auth .vc{font-family:Consolas,monospace;font-weight:700;color:var(--brand)}
+  .foot{padding:13px 18px;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .foot .sm{font-size:10.5px;color:var(--muted);line-height:1.5}
+  .land{max-width:480px;text-align:center;padding:40px 18px;color:var(--text2);font-size:14px;line-height:1.7}
+  .scanned{font-size:10.5px;color:var(--muted);margin-top:14px;text-align:center}
+  .err{max-width:480px;background:var(--badbg);border:1px solid var(--badbr);border-radius:12px;padding:18px;color:var(--bad);font-size:14px;text-align:center}
+</style>
+</head>
+<body>
+  <div class="brand"><div class="mark">C</div><div><b>CertiCerts</b><span> · Training Verification</span></div></div>
+  <div id="root"></div>
+  <div class="scanned" id="scanned"></div>
+<script>
+(function(){
+  const root=document.getElementById('root');
+  const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function b64uDecode(s){ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; const bin=atob(s); const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
+  function fmt(d){ if(!d) return ''; const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d); if(!m) return d;
+    const MO=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return MO[+m[2]-1]+' '+(+m[3])+', '+m[1]; }
+  function statusOf(ed){ if(!ed) return {ok:true,label:'VALID',sub:'No expiry'}; const today=new Date().toISOString().slice(0,10);
+    return ed>=today ? {ok:true,label:'VALID',sub:'Expires '+fmt(ed)} : {ok:false,label:'EXPIRED',sub:'Expired '+fmt(ed)}; }
+  const hash=location.hash.slice(1);
+  if(!hash){ root.innerHTML='<div class="land"><b style="color:var(--brand)">Scan a CertiCerts QR code</b><br>This page displays training-certificate verification records. Scan the QR on a certificate or wallet card to view one.</div>'; return; }
+  let d; try{ d=JSON.parse(b64uDecode(hash)); }catch(e){
+    root.innerHTML='<div class="err"><b>Could not read this verification code.</b><br>The link appears incomplete or altered. Re-scan the QR code, or verify the certificate number directly in the issuer’s CertiCerts application.</div>'; return; }
+  const isMulti=Array.isArray(d.list);
+  const issuer=d.co||d.c||'';
+  let head, body='';
+  if(isMulti){
+    const rows=d.list.map(x=>{ const st=statusOf(x.ed); return '<div class="crow"><span class="chip '+(st.ok?'ok':'bad')+'">'+st.label+'</span><div class="k">'+esc(x.k)+'</div><div class="m">'+(x.td?fmt(x.td)+' → ':'')+(x.ed?fmt(x.ed):'No expiry')+(x.no?' · '+esc(x.no):'')+'</div></div>'; }).join('');
+    const anyValid=d.list.some(x=>statusOf(x.ed).ok);
+    const st={ok:anyValid,label:anyValid?'TRAINING VERIFIED':'ALL EXPIRED',sub:d.list.length+' certificate(s) on record'};
+    head=st; body='<div class="multi">'+rows+'</div>'+(d.more?('<div class="crow"><div class="m">+ '+d.more+' more certificate(s) — see the issuer’s CertiCerts records</div></div>'):'');
+  } else {
+    const st=statusOf(d.ed); head={ok:st.ok,label:st.ok?'TRAINING VERIFIED · VALID':'CERTIFICATE EXPIRED',sub:st.sub};
+    body='<table>'+
+      (d.k?('<tr><td class="l">Course</td><td class="v">'+esc(d.k)+'</td></tr>'):'')+
+      (d.no?('<tr><td class="l">Certificate</td><td class="v mono">'+esc(d.no)+'</td></tr>'):'')+
+      (d.td?('<tr><td class="l">Issued</td><td class="v">'+fmt(d.td)+'</td></tr>'):'')+
+      ('<tr><td class="l">Expires</td><td class="v">'+(d.ed?fmt(d.ed):'No expiry')+' <span class="chip '+(st.ok?'ok':'bad')+'">'+st.label+'</span></td></tr>')+
+      '</table>';
+  }
+  root.innerHTML='<div class="card '+(head.ok?'ok':'bad')+'">'+
+    '<div class="banner"><div class="ic">'+(head.ok?'✓':'✕')+'</div><div><h1>'+esc(head.label)+'</h1><div class="sub">'+esc(head.sub)+'</div></div></div>'+
+    '<div class="who"><div class="name">'+esc(d.n||'')+'</div>'+(issuer?('<div class="co">'+esc(issuer)+'</div>'):'')+'</div>'+
+    body+
+    (d.vc?('<div class="auth"><b>Authenticity code: <span class="vc">'+esc(d.vc)+'</span></b><p>This code is cryptographically derived from the certificate details and the issuer’s private CertiCerts key. To confirm forensically, enter the certificate number in the issuer’s CertiCerts application — a matching code proves this record was issued by their system and has not been altered.</p></div>'):'')+
+    '<div class="foot"><div class="mark" style="width:22px;height:22px;font-size:12px;border-radius:6px">C</div><div class="sm">Issued via <b>CertiCerts™</b>'+(issuer?(' on behalf of <b>'+esc(issuer)+'</b>'):'')+'. This page renders the signed record carried in the QR code; the issuer’s application holds the authoritative database.</div></div>'+
+  '</div>';
+  document.getElementById('scanned').textContent='Viewed '+new Date().toLocaleString();
+})();
+</script>
+</body>
+</html>
