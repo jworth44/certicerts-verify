@@ -64,31 +64,64 @@
   const hash=location.hash.slice(1);
   if(!hash){ root.innerHTML='<div class="land"><b style="color:var(--brand)">Scan a CertiCerts QR code</b><br>This page displays training-certificate verification records. Scan the QR on a certificate or wallet card to view one.</div>'; return; }
   let d; try{ d=JSON.parse(b64uDecode(hash)); }catch(e){
-    root.innerHTML='<div class="err"><b>Could not read this verification code.</b><br>The link appears incomplete or altered. Re-scan the QR code, or verify the certificate number directly in the issuer’s CertiCerts application.</div>'; return; }
+    root.innerHTML='<div class="err"><b>Could not read this verification code.</b><br>The link appears incomplete or damaged. Re-scan the QR code, or confirm the certificate number directly with the issuer.</div>'; return; }
   const isMulti=Array.isArray(d.list);
   const issuer=d.co||d.c||'';
-  let head, body='';
+  // Online check (team sync stage 5): a single certificate with a number + verification code is looked up
+  // in the issuer's live records. Fixed address — never taken from the link, so a crafted link can't
+  // point the page at a server that says "valid". No record / no internet -> the QR's own record as before.
+  // Testing only: ?api= is honoured when it points at THIS computer (a local worker) — never another site.
+  const apiParam=new URLSearchParams(location.search).get('api')||'';
+  const LIVE_API=/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/verify$/.test(apiParam)?apiParam:'https://certicerts.com/api/verify';
+  function card(head, name, co, body, extra, footIssuer){
+    root.innerHTML='<div class="card '+(head.ok?'ok':'bad')+'">'+
+      '<div class="banner"><div class="ic">'+(head.ok?'✓':'✕')+'</div><div><h1>'+esc(head.label)+'</h1><div class="sub">'+esc(head.sub)+'</div></div></div>'+
+      '<div class="who"><div class="name">'+esc(name||'')+'</div>'+(co?('<div class="co">'+esc(co)+'</div>'):'')+'</div>'+
+      body+extra+
+      '<div class="foot"><div class="mark" style="width:22px;height:22px;font-size:12px;border-radius:6px">C</div><div class="sm">Issued via <b>CertiCerts™</b>'+(footIssuer?(' on behalf of <b>'+esc(footIssuer)+'</b>'):'')+'. '+
+      (head.live?'Status checked online against the issuer’s live records.':'This page renders the record carried in the QR code; the issuer’s application holds the authoritative database.')+'</div></div>'+
+    '</div>'; }
+  function rows(k,no,td,ed,chip){ return '<table>'+
+      (k?('<tr><td class="l">Course</td><td class="v">'+esc(k)+'</td></tr>'):'')+
+      (no?('<tr><td class="l">Certificate</td><td class="v mono">'+esc(no)+'</td></tr>'):'')+
+      (td?('<tr><td class="l">Issued</td><td class="v">'+fmt(td)+'</td></tr>'):'')+
+      ('<tr><td class="l">Expires</td><td class="v">'+(ed?fmt(ed):'No expiry')+' '+chip+'</td></tr>')+
+      '</table>'; }
+  const authBlock=d.vc?('<div class="auth"><b>Authenticity code: <span class="vc">'+esc(d.vc)+'</span></b><p>This code is generated from the certificate details and a key held only by the issuer’s CertiCerts installation. To confirm this record, ask the issuer to look up the certificate number in CertiCerts — only their installation can reproduce a matching code. This page shows the record carried in the QR; it does not itself check the code.</p></div>'):'';
+  function note(t){ return '<div class="auth" id="liveNote"><p style="margin:0">'+t+'</p></div>'; }
+  function offlineView(live){   // the record carried in the QR (+ what the online check said, if anything)
+    const st=statusOf(d.ed);
+    const extra=(live==='checking'?note('Checking online with the issuer’s records…'):
+      live==='notfound'?note('No online record was found for this certificate. The details above are carried in the QR code itself.'):
+      live==='offline'?note('The online check could not be reached just now. The details above are carried in the QR code itself.'):'')+authBlock;
+    card({ok:st.ok,label:st.ok?'TRAINING VERIFIED · VALID':'CERTIFICATE EXPIRED',sub:st.sub}, d.n, issuer,
+      rows(d.k,d.no,d.td,d.ed,'<span class="chip '+(st.ok?'ok':'bad')+'">'+st.label+'</span>'), extra, issuer); }
+  function liveView(r){   // the issuer's live record wins (revocation, corrected details)
+    const when=new Date(r.checked_at||Date.now()).toLocaleString();
+    let head, chip;
+    if(r.status==='revoked'){ const on=r.revoked_at?String(r.revoked_at).slice(0,10):'';
+      head={ok:false,live:true,label:'CERTIFICATE REVOKED',sub:'Revoked by the issuer'+(on?' on '+fmt(on):'')}; chip='<span class="chip bad">REVOKED</span>'; }
+    else if(r.status==='expired'){ head={ok:false,live:true,label:'CERTIFICATE EXPIRED',sub:'Expired '+fmt(r.expiry_date)}; chip='<span class="chip bad">EXPIRED</span>'; }
+    else { head={ok:true,live:true,label:'TRAINING VERIFIED · VALID',sub:r.expiry_date?'Expires '+fmt(r.expiry_date):'No expiry'}; chip='<span class="chip ok">VALID</span>'; }
+    const reason=r.status==='revoked'&&r.revoked_reason?('<tr><td class="l">Reason</td><td class="v">'+esc(r.revoked_reason)+'</td></tr>'):'';
+    const body=rows(r.course,d.no,r.training_date,r.expiry_date,chip).replace('</table>',reason+'</table>');
+    card(head, r.holder, r.company||issuer, body,
+      '<div class="auth" id="liveNote"><b style="color:'+(head.ok?'var(--ok)':'var(--bad)')+'">'+(head.ok?'✓ ':'')+'Checked online</b><p>Status confirmed against '+esc(r.issuer||'the issuer')+'’s live CertiCerts records at '+esc(when)+'.</p></div>', r.issuer||issuer); }
   if(isMulti){
-    const rows=d.list.map(x=>{ const st=statusOf(x.ed); return '<div class="crow"><span class="chip '+(st.ok?'ok':'bad')+'">'+st.label+'</span><div class="k">'+esc(x.k)+'</div><div class="m">'+(x.td?fmt(x.td)+' → ':'')+(x.ed?fmt(x.ed):'No expiry')+(x.no?' · '+esc(x.no):'')+'</div></div>'; }).join('');
+    const rows2=d.list.map(x=>{ const st=statusOf(x.ed); return '<div class="crow"><span class="chip '+(st.ok?'ok':'bad')+'">'+st.label+'</span><div class="k">'+esc(x.k)+'</div><div class="m">'+(x.td?fmt(x.td)+' → ':'')+(x.ed?fmt(x.ed):'No expiry')+(x.no?' · '+esc(x.no):'')+'</div></div>'; }).join('');
     const anyValid=d.list.some(x=>statusOf(x.ed).ok);
-    const st={ok:anyValid,label:anyValid?'TRAINING VERIFIED':'ALL EXPIRED',sub:d.list.length+' certificate(s) on record'};
-    head=st; body='<div class="multi">'+rows+'</div>'+(d.more?('<div class="crow"><div class="m">+ '+d.more+' more certificate(s) — see the issuer’s CertiCerts records</div></div>'):'');
+    card({ok:anyValid,label:anyValid?'TRAINING VERIFIED':'ALL EXPIRED',sub:d.list.length+' certificate(s) on record'}, d.n, issuer,
+      '<div class="multi">'+rows2+'</div>'+(d.more?('<div class="crow"><div class="m">+ '+d.more+' more certificate(s) — see the issuer’s CertiCerts records</div></div>'):''), authBlock, issuer);
+  } else if(d.no && d.vc){
+    offlineView('checking');
+    const ctl=('AbortController' in window)?new AbortController():null; const t=setTimeout(()=>{ try{ ctl&&ctl.abort(); }catch(e){} }, 8000);
+    fetch(LIVE_API+'?no='+encodeURIComponent(d.no)+'&vc='+encodeURIComponent(d.vc),{cache:'no-store',signal:ctl?ctl.signal:undefined})
+      .then(r=>r.ok?r.json():Promise.reject(r.status))
+      .then(r=>{ clearTimeout(t); if(r&&r.found) liveView(r); else offlineView('notfound'); })
+      .catch(()=>{ clearTimeout(t); offlineView('offline'); });
   } else {
-    const st=statusOf(d.ed); head={ok:st.ok,label:st.ok?'TRAINING VERIFIED · VALID':'CERTIFICATE EXPIRED',sub:st.sub};
-    body='<table>'+
-      (d.k?('<tr><td class="l">Course</td><td class="v">'+esc(d.k)+'</td></tr>'):'')+
-      (d.no?('<tr><td class="l">Certificate</td><td class="v mono">'+esc(d.no)+'</td></tr>'):'')+
-      (d.td?('<tr><td class="l">Issued</td><td class="v">'+fmt(d.td)+'</td></tr>'):'')+
-      ('<tr><td class="l">Expires</td><td class="v">'+(d.ed?fmt(d.ed):'No expiry')+' <span class="chip '+(st.ok?'ok':'bad')+'">'+st.label+'</span></td></tr>')+
-      '</table>';
+    offlineView('');
   }
-  root.innerHTML='<div class="card '+(head.ok?'ok':'bad')+'">'+
-    '<div class="banner"><div class="ic">'+(head.ok?'✓':'✕')+'</div><div><h1>'+esc(head.label)+'</h1><div class="sub">'+esc(head.sub)+'</div></div></div>'+
-    '<div class="who"><div class="name">'+esc(d.n||'')+'</div>'+(issuer?('<div class="co">'+esc(issuer)+'</div>'):'')+'</div>'+
-    body+
-    (d.vc?('<div class="auth"><b>Authenticity code: <span class="vc">'+esc(d.vc)+'</span></b><p>This code is cryptographically derived from the certificate details and the issuer’s private CertiCerts key. To confirm forensically, enter the certificate number in the issuer’s CertiCerts application — a matching code proves this record was issued by their system and has not been altered.</p></div>'):'')+
-    '<div class="foot"><div class="mark" style="width:22px;height:22px;font-size:12px;border-radius:6px">C</div><div class="sm">Issued via <b>CertiCerts™</b>'+(issuer?(' on behalf of <b>'+esc(issuer)+'</b>'):'')+'. This page renders the signed record carried in the QR code; the issuer’s application holds the authoritative database.</div></div>'+
-  '</div>';
   document.getElementById('scanned').textContent='Viewed '+new Date().toLocaleString();
 })();
 </script>
